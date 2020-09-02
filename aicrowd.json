@@ -1,7 +1,15 @@
 {
     "challenge_id" : "evaluations-api-neurips-2020-procgen",
     "grader_id": "evaluations-api-neurips-2020-procgen",
+<<<<<<< HEAD
     "authors" : ["mohith_sakthivel"],
     "description" : "NeurIPS 2020: Procgen Competition Agent",
     "debug" : true
 }
+=======
+    "authors" : ["Mohith Sakthivel <mohithksakthivel@gmail.com>"],
+    "description": "Procgen test submission",
+    "docker_build": false,
+    "debug" : false
+}
+>>>>>>> b5ca0b05f7a4bb1e34f6873d3afe0db83a461caa
