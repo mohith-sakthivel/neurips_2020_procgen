@@ -3,8 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# editor
+# Personal
 .vscode/
+experiments/local_test.yaml
+
 # C extensions
 *.so
 
