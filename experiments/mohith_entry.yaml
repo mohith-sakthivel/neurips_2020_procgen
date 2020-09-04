@@ -128,6 +128,14 @@ procgen-ppo:
         # NOTE: Some agents may not support `torch` yet and throw an error.
         use_pytorch: True
 
+        ### ICM Settings
+        # Use intrinsic reward
+        use_intrinsic_rew: False
+        # Coefficent for inverse dynamics
+        idm_loss_coeff: 0.005
+        # Coefficent for forward dynamics
+        fdm_loss_coeff: 0.02
+
         ################################################
         ################################################
         # === Settings for Model ===
