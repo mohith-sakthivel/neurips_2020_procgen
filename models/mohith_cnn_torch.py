@@ -110,7 +110,7 @@ class MohithCNN(TorchModelV2, nn.Module):
             x = self.fdm_hidden(x)
             x = nn.functional.relu(x)
             next_obs = self.fdm_output(x)
-            return torch.mean(torch.pow((next_obs_t - next_obs), 2), dim=1)
+            return torch.mean(torch.pow((next_obs_t - next_obs), 2), dim=1).cpu().numpy()
 
     def icm_losses(self, input_dict):
         mask = [not i for i in input_dict["dones"]]
