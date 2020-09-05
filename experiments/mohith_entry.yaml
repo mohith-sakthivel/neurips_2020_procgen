@@ -136,7 +136,7 @@ procgen-ppo:
         # Coefficent for forward dynamics
         fdm_loss_coeff: 1
         # Coeff for intrinsic reward
-        in_rew_coeff: 0
+        in_rew_coeff: 0.01
 
         ################################################
         ################################################
