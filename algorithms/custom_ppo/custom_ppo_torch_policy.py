@@ -111,14 +111,14 @@ class PPOLoss:
             self.mean_vf_loss = reduce_mean_valid(vf_loss)
             loss = (-surrogate_loss + cur_kl_coeff * action_kl +
                     vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy)
-            if idm_loss is not None:
-                loss += idm_loss_coeff * idm_loss + fdm_loss_coeff * fdm_loss
-            loss = reduce_mean_valid(loss)
         else:
             self.mean_vf_loss = 0.0
-            loss = reduce_mean_valid(-surrogate_loss +
-                                     cur_kl_coeff * action_kl -
-                                     entropy_coeff * curr_entropy)
+            loss = -surrogate_loss + cur_kl_coeff * action_kl - entropy_coeff * curr_entropy
+    
+        if idm_loss is not None:
+            loss += idm_loss_coeff * idm_loss + fdm_loss_coeff * fdm_loss
+
+        loss = reduce_mean_valid(loss)        
         self.loss = loss
 
         # def calc_mean(t):
@@ -141,7 +141,7 @@ def ppo_surrogate_loss(policy, model, dist_class, train_batch):
         mask = sequence_mask(train_batch["seq_lens"], max_seq_len)
         mask = torch.reshape(mask, [-1])
 
-    if policy.config["use_intrinsic_rew"]:
+    if policy.config["use_intrinsic_rew"] or True:
         icm_input = {
                     "obs": train_batch[SampleBatch.CUR_OBS],
                     "new_obs": train_batch[SampleBatch.NEXT_OBS],

@@ -1,7 +1,7 @@
 procgen-ppo:
     env: procgen_env_wrapper  # Change this at your own risk :D
     run: CustomPPOAgent
-    # run: PPO
+
     # Can be replaced by any of the available agents as described at : 
     # https://github.com/ray-project/ray/blob/master/rllib/agents/registry.py#L103
     # 
@@ -132,9 +132,9 @@ procgen-ppo:
         # Use intrinsic reward
         use_intrinsic_rew: False
         # Coefficent for inverse dynamics
-        idm_loss_coeff: 0.005
+        idm_loss_coeff: 0.015
         # Coefficent for forward dynamics
-        fdm_loss_coeff: 0.02
+        fdm_loss_coeff: 0.15
 
         ################################################
         ################################################
