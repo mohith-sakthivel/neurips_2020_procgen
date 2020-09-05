@@ -141,7 +141,7 @@ def ppo_surrogate_loss(policy, model, dist_class, train_batch):
         mask = sequence_mask(train_batch["seq_lens"], max_seq_len)
         mask = torch.reshape(mask, [-1])
 
-    if policy.config["use_intrinsic_rew"] or True:
+    if policy.config["use_intrinsic_rew"]:
         icm_input = {
                     "obs": train_batch[SampleBatch.CUR_OBS],
                     "new_obs": train_batch[SampleBatch.NEXT_OBS],
