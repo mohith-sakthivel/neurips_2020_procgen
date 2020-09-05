@@ -130,11 +130,13 @@ procgen-ppo:
 
         ### ICM Settings
         # Use intrinsic reward
-        use_intrinsic_rew: False
+        use_intrinsic_rew: True
         # Coefficent for inverse dynamics
         idm_loss_coeff: 1
         # Coefficent for forward dynamics
         fdm_loss_coeff: 1
+        # Coeff for intrinsic reward
+        in_rew_coeff: 0
 
         ################################################
         ################################################

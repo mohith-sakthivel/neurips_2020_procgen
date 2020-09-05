@@ -298,6 +298,7 @@ def postprocess_ppo_gae(policy,
         last_r,
         policy.config["gamma"],
         policy.config["lambda"],
+        policy.config["in_rew_coeff"],
         use_gae=policy.config["use_gae"])
     return batch
 
@@ -306,6 +307,7 @@ def compute_advantages(rollout,
                        last_r,
                        gamma=0.9,
                        lambda_=1.0,
+                       in_rew_coeff=0.01,
                        use_gae=True,
                        use_critic=True):
     """
@@ -340,7 +342,7 @@ def compute_advantages(rollout,
              np.array([last_r])])
         delta_t = (
                    traj[SampleBatch.REWARDS] +
-                   0.01 * traj[PostProcessing.INTRINSIC_REWARDS] +
+                   in_rew_coeff * traj[PostProcessing.INTRINSIC_REWARDS] +
                    gamma * vpred_t[1:] - vpred_t[:-1])
         # This formula for the advantage comes from:
         # "Generalized Advantage Estimation": https://arxiv.org/abs/1506.02438
@@ -350,7 +352,7 @@ def compute_advantages(rollout,
             traj[SampleBatch.VF_PREDS]).copy().astype(np.float32)
     else:
         rewards_plus_v = np.concatenate(
-            [rollout[SampleBatch.REWARDS] + 0.01 * traj[PostProcessing.INTRINSIC_REWARDS],
+            [rollout[SampleBatch.REWARDS] + in_rew_coeff * traj[PostProcessing.INTRINSIC_REWARDS],
              np.array([last_r])])
         discounted_returns = discount(rewards_plus_v,
                                       gamma)[:-1].copy().astype(np.float32)

@@ -51,9 +51,11 @@ DEFAULT_CONFIG = with_common_config({
     # Use intrinsic reward
     "use_intrinsic_rew": True,
     # Coefficent for inverse dynamics
-    "idm_loss_coeff": 0.005,
+    "idm_loss_coeff": 1,
     # Coefficent for forward dynamics
-    "fdm_loss_coeff": 0.02,
+    "fdm_loss_coeff": 1,
+    # Coeff for intrinsic reward
+    "in_rew_coeff": 0.01,
     # Decay schedule for the entropy regularizer.
     "entropy_coeff_schedule": None,
     # PPO clip parameter.

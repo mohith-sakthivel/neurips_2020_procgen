@@ -81,9 +81,9 @@ class MohithCNN(TorchModelV2, nn.Module):
         x = torch.flatten(x, start_dim=1)
         x = nn.functional.relu(x)
         x = self.hidden_fc_1(x)
-        # x = self.bn(x)
-        # return layer_norm(x)
-        return x
+        x =  self.bn(x) if x.shape[0]>1 else x
+        return layer_norm(x)
+        # return x
 
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
