@@ -279,7 +279,7 @@ def postprocess_ppo_gae(policy,
                                *next_state)
 
     in_rews = np.zeros(len(sample_batch["dones"]))
-    if policy.config["use_intrinsic_rew"]:
+    if policy.config["use_intrinsic_rew"] and not all(sample_batch["dones"]):
         masks = [not i for i in sample_batch["dones"]]
         in_rews = np.zeros(len(masks))
         obs = sample_batch[SampleBatch.CUR_OBS][masks]
