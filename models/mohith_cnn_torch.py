@@ -50,8 +50,7 @@ class MohithCNN(TorchModelV2, nn.Module):
         TorchModelV2.__init__(self, obs_space, action_space, num_outputs,
                               model_config, name)
         nn.Module.__init__(self)
-
-        h, w, c = obs_space.shape
+        c, h, w = obs_space.shape
         shape = (c, h, w)
         embed_size = 256
 
@@ -75,7 +74,7 @@ class MohithCNN(TorchModelV2, nn.Module):
     def embedding(self, obs):
         x = obs.float()
         x = x / 255.0  # scale to 0-1
-        x = x.permute(0, 3, 1, 2)  # NHWC => NCHW
+        # x = x.permute(0, 3, 1, 2)  # NHWC => NCHW
         for conv_seq in self.conv_seqs:
             x = conv_seq(x)
         x = torch.flatten(x, start_dim=1)
@@ -118,8 +117,8 @@ class MohithCNN(TorchModelV2, nn.Module):
         next_obs_t = self.embedding(input_dict["new_obs"][mask].float())
         act = input_dict["actions"][mask].long()
         act_one_hot = nn.functional.one_hot(act, num_classes=self.action_space.n).float()
-        fdm_loss = torch.zeros(len(mask), dtype=torch.float32)
-        idm_loss = torch.zeros(len(mask), dtype=torch.float32)
+        fdm_loss = torch.zeros(len(mask), dtype=torch.float32, device=obs.device)
+        idm_loss = torch.zeros(len(mask), dtype=torch.float32, device=obs.device)
 
         fdm_x = torch.cat((obs.detach(), act_one_hot.detach()), dim=1)
         fdm_x = self.fdm_hidden(fdm_x)
