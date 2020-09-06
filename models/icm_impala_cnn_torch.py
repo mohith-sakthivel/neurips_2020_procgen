@@ -112,9 +112,9 @@ class ICMImpalaCNN(TorchModelV2, nn.Module):
             obs = self.embedding(input_dict["obs"])
             next_obs_t = obs[1:][mask[:-1]]
             if mask[-1]:
-                next_obs_t = torch.cat(next_obs_t, self.embedding(input_dict["new_obs"][-1]))
+                next_obs_t = torch.cat((next_obs_t, self.embedding(input_dict["new_obs"][-1:])), dim=0)
             obs = obs[mask]
-            act_one_hot = nn.functional.one_hot(input_dict["actions"].long(),
+            act_one_hot = nn.functional.one_hot(input_dict["actions"][mask].long(),
                                                 num_classes=self.action_space.n)
             in_rew = torch.zeros(len(mask), dtype=torch.float32, device=obs.device)
 
@@ -128,7 +128,7 @@ class ICMImpalaCNN(TorchModelV2, nn.Module):
     def icm_losses(self, input_dict):
         assert self._obs_embed is not None, "must call forward() first"
         mask = [not i for i in input_dict["dones"]]
-        obs = self.obs_embed[mask]
+        obs = self._obs_embed[mask]
         with torch.no_grad():
             next_obs_t = self.embedding(input_dict["new_obs"][mask].float())
         act = input_dict["actions"][mask].long()

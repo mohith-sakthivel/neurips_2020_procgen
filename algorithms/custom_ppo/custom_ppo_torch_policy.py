@@ -102,7 +102,7 @@ class PPOLoss:
                                      1 + clip_param))
         self.mean_policy_loss = reduce_mean_valid(-surrogate_loss)
 
-        if idm_loss != 0:
+        if idm_loss is not None:
             self.idm_loss = reduce_mean_valid(idm_loss)
             self.fdm_loss = reduce_mean_valid(fdm_loss)
 
@@ -114,13 +114,12 @@ class PPOLoss:
             vf_loss = torch.max(vf_loss1, vf_loss2)
             self.mean_vf_loss = reduce_mean_valid(vf_loss)
             loss = (-surrogate_loss + cur_kl_coeff * action_kl +
-                    vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy +
-                    idm_loss_coeff * idm_loss + fdm_loss_coeff * fdm_loss)
+                    vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy)
         else:
             self.mean_vf_loss = 0.0
-            loss = (-surrogate_loss + cur_kl_coeff * action_kl - entropy_coeff * curr_entropy +
-                    idm_loss_coeff * idm_loss + fdm_loss_coeff * fdm_loss)
-
+            loss = (-surrogate_loss + cur_kl_coeff * action_kl - entropy_coeff * curr_entropy)
+        if idm_loss is not None:
+            loss += idm_loss_coeff * idm_loss + fdm_loss_coeff * fdm_loss
         loss = reduce_mean_valid(loss)        
         self.loss = loss
 
@@ -144,6 +143,17 @@ def ppo_surrogate_loss(policy, model, dist_class, train_batch):
         mask = sequence_mask(train_batch["seq_lens"], max_seq_len)
         mask = torch.reshape(mask, [-1])
 
+    if policy.config["use_intrinsic_rew"]:
+        icm_input = {
+                    # "obs": input_dict[SampleBatch.CUR_OBS],
+                    "new_obs": train_batch[SampleBatch.NEXT_OBS],
+                    "actions": train_batch[SampleBatch.ACTIONS],
+                    "dones": train_batch["dones"]
+                    }
+        fdm_loss, idm_loss = policy.model.icm_losses(icm_input)
+        train_batch["fdm_loss"] = fdm_loss
+        train_batch["idm_loss"] = idm_loss
+
     policy.loss_obj = PPOLoss(
         dist_class,
         model,
@@ -157,8 +167,8 @@ def ppo_surrogate_loss(policy, model, dist_class, train_batch):
         model.value_function(),
         policy.kl_coeff,
         mask,
-        train_batch.get("fdm_loss", 0),
-        train_batch.get("idm_loss", 0),
+        train_batch.get("fdm_loss", None),
+        train_batch.get("idm_loss", None),
         entropy_coeff=policy.entropy_coeff,
         clip_param=policy.config["clip_param"],
         vf_clip_param=policy.config["vf_clip_param"],
@@ -190,8 +200,8 @@ def kl_and_loss_stats(policy, train_batch):
         if not policy.config["no_reward"]:
             stats["max_intrinsic_rew"] = max(train_batch[PostProcessing.INTRINSIC_REWARDS])
             stats["max_extrinsic_rew"] = max(train_batch[SampleBatch.REWARDS])
-            stats["mean_intrinsic_rew"] = np.mean(train_batch[PostProcessing.INTRINSIC_REWARDS])
-            stats["mean_extrinsic_rew"] = np.mean(train_batch[SampleBatch.REWARDS])
+            stats["mean_intrinsic_rew"] = torch.mean(train_batch[PostProcessing.INTRINSIC_REWARDS]).cpu().item()
+            stats["mean_extrinsic_rew"] = torch.mean(train_batch[SampleBatch.REWARDS]).cpu().item()
         stats["idm_loss"] = policy.loss_obj.idm_loss
         stats["fdm_loss"] = policy.loss_obj.fdm_loss
     return stats
@@ -207,16 +217,6 @@ class PostProcessing:
 def vf_preds_fetches(policy, input_dict, state_batches, model, action_dist):
     """Adds value function outputs to experience train_batches."""
     extra_dict = { SampleBatch.VF_PREDS: policy.model.value_function()}
-    if policy.config["use_intrinsic_rew"]:
-        icm_input = {
-                    # "obs": input_dict[SampleBatch.CUR_OBS],
-                    "new_obs": input_dict[SampleBatch.NEXT_OBS],
-                    "actions": input_dict[SampleBatch.ACTIONS],
-                    "dones": input_dict["dones"]
-                    }
-        fdm_loss, idm_loss = policy.model.icm_losses(icm_input)
-        extra_dict["fdm_loss"] = fdm_loss
-        extra_dict["idm_loss"] = idm_loss
     return extra_dict
                 
 
@@ -291,10 +291,10 @@ def postprocess_ppo_gae(policy,
         in_rews_batch = {
                         SampleBatch.CUR_OBS: sample_batch[SampleBatch.CUR_OBS],
                         SampleBatch.NEXT_OBS: sample_batch[SampleBatch.NEXT_OBS][-1:],
-                        SampleBatch.ACTIONS: [SampleBatch.ACTIONS],
+                        SampleBatch.ACTIONS: sample_batch[SampleBatch.ACTIONS],
                         }
         in_rews_batch = policy._lazy_tensor_dict(in_rews_batch)
-        in_rews_batch["masks"] = sample_batch["dones"]
+        in_rews_batch["dones"] = sample_batch["dones"]
         in_rews = policy.model.intrinsic_reward(in_rews_batch)
     sample_batch[PostProcessing.INTRINSIC_REWARDS] = in_rews
 
