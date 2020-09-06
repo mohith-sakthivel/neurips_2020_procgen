@@ -50,6 +50,8 @@ DEFAULT_CONFIG = with_common_config({
     "entropy_coeff": 0.0,
     # Use intrinsic reward
     "use_intrinsic_rew": True,
+    # no reward
+    "no_reward": False,
     # Coefficent for inverse dynamics
     "idm_loss_coeff": 1,
     # Coefficent for forward dynamics
@@ -203,3 +205,4 @@ CustomPPOTrainer = build_trainer(
     validate_config=validate_config,
     after_optimizer_step=update_kl,
     after_train_result=warn_about_bad_reward_scales)
+    

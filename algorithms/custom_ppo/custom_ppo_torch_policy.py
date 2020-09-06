@@ -1,8 +1,11 @@
+import algorithms
 from os import stat
-from algorithms.custom_ppo.custom_ppo import DEFAULT_CONFIG
-import logging
+# from algorithms.custom_ppo.custom_ppo import DEFAULT_CONFIG
 import numpy as np
 from ray.rllib.evaluation.postprocessing import discount
+
+import logging
+
 import ray
 from ray.rllib.agents.a3c.a3c_torch_policy import apply_grad_clipping
 from ray.rllib.agents.ppo.ppo_tf_policy import postprocess_ppo_gae, \
@@ -35,8 +38,8 @@ class PPOLoss:
                  value_fn,
                  cur_kl_coeff,
                  valid_mask,
-                 idm_loss,
                  fdm_loss,
+                 idm_loss,
                  entropy_coeff=0,
                  clip_param=0.1,
                  vf_clip_param=0.1,
@@ -45,6 +48,7 @@ class PPOLoss:
                  fdm_loss_coeff=0,
                  use_gae=True):
         """Constructs the loss for Proximal Policy Objective.
+
         Arguments:
             dist_class: action distribution class for logits.
             value_targets (Placeholder): Placeholder for target values; used
@@ -98,7 +102,7 @@ class PPOLoss:
                                      1 + clip_param))
         self.mean_policy_loss = reduce_mean_valid(-surrogate_loss)
 
-        if idm_loss is not None:
+        if idm_loss != 0:
             self.idm_loss = reduce_mean_valid(idm_loss)
             self.fdm_loss = reduce_mean_valid(fdm_loss)
 
@@ -110,13 +114,12 @@ class PPOLoss:
             vf_loss = torch.max(vf_loss1, vf_loss2)
             self.mean_vf_loss = reduce_mean_valid(vf_loss)
             loss = (-surrogate_loss + cur_kl_coeff * action_kl +
-                    vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy)
+                    vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy +
+                    idm_loss_coeff * idm_loss + fdm_loss_coeff * fdm_loss)
         else:
             self.mean_vf_loss = 0.0
-            loss = -surrogate_loss + cur_kl_coeff * action_kl - entropy_coeff * curr_entropy
-    
-        if idm_loss is not None:
-            loss += idm_loss_coeff * idm_loss + fdm_loss_coeff * fdm_loss
+            loss = (-surrogate_loss + cur_kl_coeff * action_kl - entropy_coeff * curr_entropy +
+                    idm_loss_coeff * idm_loss + fdm_loss_coeff * fdm_loss)
 
         loss = reduce_mean_valid(loss)        
         self.loss = loss
@@ -141,17 +144,6 @@ def ppo_surrogate_loss(policy, model, dist_class, train_batch):
         mask = sequence_mask(train_batch["seq_lens"], max_seq_len)
         mask = torch.reshape(mask, [-1])
 
-    if policy.config["use_intrinsic_rew"]:
-        icm_input = {
-                    "obs": train_batch[SampleBatch.CUR_OBS],
-                    "new_obs": train_batch[SampleBatch.NEXT_OBS],
-                    "actions": train_batch[SampleBatch.ACTIONS],
-                    "dones": train_batch["dones"]
-                    }
-        fdm_loss, idm_loss = policy.model.icm_losses(icm_input)
-    else:
-        fdm_loss, idm_loss = None, None
-
     policy.loss_obj = PPOLoss(
         dist_class,
         model,
@@ -165,8 +157,8 @@ def ppo_surrogate_loss(policy, model, dist_class, train_batch):
         model.value_function(),
         policy.kl_coeff,
         mask,
-        idm_loss,
-        fdm_loss,
+        train_batch.get("fdm_loss", 0),
+        train_batch.get("idm_loss", 0),
         entropy_coeff=policy.entropy_coeff,
         clip_param=policy.config["clip_param"],
         vf_clip_param=policy.config["vf_clip_param"],
@@ -195,6 +187,11 @@ def kl_and_loss_stats(policy, train_batch):
         "entropy_coeff": policy.entropy_coeff,
     }
     if policy.config["use_intrinsic_rew"]:
+        if not policy.config["no_reward"]:
+            stats["max_intrinsic_rew"] = max(train_batch[PostProcessing.INTRINSIC_REWARDS])
+            stats["max_extrinsic_rew"] = max(train_batch[SampleBatch.REWARDS])
+            stats["mean_intrinsic_rew"] = np.mean(train_batch[PostProcessing.INTRINSIC_REWARDS])
+            stats["mean_extrinsic_rew"] = np.mean(train_batch[SampleBatch.REWARDS])
         stats["idm_loss"] = policy.loss_obj.idm_loss
         stats["fdm_loss"] = policy.loss_obj.fdm_loss
     return stats
@@ -209,9 +206,19 @@ class PostProcessing:
 
 def vf_preds_fetches(policy, input_dict, state_batches, model, action_dist):
     """Adds value function outputs to experience train_batches."""
-    return {
-        SampleBatch.VF_PREDS: policy.model.value_function()
-    }
+    extra_dict = { SampleBatch.VF_PREDS: policy.model.value_function()}
+    if policy.config["use_intrinsic_rew"]:
+        icm_input = {
+                    # "obs": input_dict[SampleBatch.CUR_OBS],
+                    "new_obs": input_dict[SampleBatch.NEXT_OBS],
+                    "actions": input_dict[SampleBatch.ACTIONS],
+                    "dones": input_dict["dones"]
+                    }
+        fdm_loss, idm_loss = policy.model.icm_losses(icm_input)
+        extra_dict["fdm_loss"] = fdm_loss
+        extra_dict["idm_loss"] = idm_loss
+    return extra_dict
+                
 
 
 class KLCoeffMixin:
@@ -279,18 +286,16 @@ def postprocess_ppo_gae(policy,
                                *next_state)
 
     in_rews = np.zeros(len(sample_batch["dones"]))
-    if policy.config["use_intrinsic_rew"] and not all(sample_batch["dones"]):
-        masks = [not i for i in sample_batch["dones"]]
-        in_rews = np.zeros(len(masks))
-        obs = sample_batch[SampleBatch.CUR_OBS][masks]
-        next_obs = sample_batch[SampleBatch.NEXT_OBS][masks]
-        act = sample_batch[SampleBatch.ACTIONS][masks]
+    if (policy.config["use_intrinsic_rew"] and not policy.config["no_reward"]
+        and not all(sample_batch["dones"])):
         in_rews_batch = {
-                        SampleBatch.CUR_OBS: obs,
-                        SampleBatch.NEXT_OBS: next_obs,
-                        SampleBatch.ACTIONS: act,
+                        SampleBatch.CUR_OBS: sample_batch[SampleBatch.CUR_OBS],
+                        SampleBatch.NEXT_OBS: sample_batch[SampleBatch.NEXT_OBS][-1:],
+                        SampleBatch.ACTIONS: [SampleBatch.ACTIONS],
                         }
-        in_rews[masks] = policy.model.intrinsic_reward(policy._lazy_tensor_dict(in_rews_batch))
+        in_rews_batch = policy._lazy_tensor_dict(in_rews_batch)
+        in_rews_batch["masks"] = sample_batch["dones"]
+        in_rews = policy.model.intrinsic_reward(in_rews_batch)
     sample_batch[PostProcessing.INTRINSIC_REWARDS] = in_rews
 
     batch = compute_advantages(
@@ -377,7 +382,7 @@ def compute_advantages(rollout,
 
 CustomPPOTorchPolicy = build_torch_policy(
     name="CustomPPOTorchPolicy",
-    get_default_config=lambda: DEFAULT_CONFIG,
+    get_default_config=lambda: algorithms.custom_ppo.DEFAULT_CONFIG,
     loss_fn=ppo_surrogate_loss,
     stats_fn=kl_and_loss_stats,
     extra_action_out_fn=vf_preds_fetches,

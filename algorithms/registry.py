@@ -13,20 +13,20 @@ An example integration of the random agent is shown here :
 """
 
 
-def _import_custom_random_agent():
-    from .custom_random_agent.custom_random_agent import CustomRandomAgent
-    return CustomRandomAgent
+# def _import_custom_random_agent():
+#     from .custom_random_agent.custom_random_agent import CustomRandomAgent
+#     return CustomRandomAgent
 
-def _import_random_policy():
-    from .random_policy.trainer import RandomPolicyTrainer
-    return RandomPolicyTrainer
+# def _import_random_policy():
+#     from .random_policy.trainer import RandomPolicyTrainer
+#     return RandomPolicyTrainer
 
 def _import_custom_ppo_agent():
     from .custom_ppo.custom_ppo import CustomPPOTrainer
     return CustomPPOTrainer
 
 CUSTOM_ALGORITHMS = {
-    "custom/CustomRandomAgent": _import_custom_random_agent,
-    "RandomPolicy": _import_random_policy,
+    # "custom/CustomRandomAgent": _import_custom_random_agent,
+    # "RandomPolicy": _import_random_policy,
     "CustomPPOAgent": _import_custom_ppo_agent
 }

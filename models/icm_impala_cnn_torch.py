@@ -43,7 +43,7 @@ class ConvSequence(nn.Module):
         return (self._out_channels, (h + 1) // 2, (w + 1) // 2)
 
 
-class MohithImpalaCNN(TorchModelV2, nn.Module):
+class ICMImpalaCNN(TorchModelV2, nn.Module):
     """
     Network from IMPALA paper implemented in ModelV2 API.
 
@@ -57,7 +57,8 @@ class MohithImpalaCNN(TorchModelV2, nn.Module):
                               model_config, name)
         nn.Module.__init__(self)
 
-        c, h, w = obs_space.shape
+        # c, h, w = obs_space.shape     # Frame stack
+        h, w, c = obs_space.shape
         shape = (c, h, w)
         embed_size = 256
 
@@ -79,15 +80,9 @@ class MohithImpalaCNN(TorchModelV2, nn.Module):
         
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
-        x = input_dict["obs"].float()
-        x = x / 255.0  # scale to 0-1
-        # x = x.permute(0, 3, 1, 2)  # NHWC => NCHW
-        for conv_seq in self.conv_seqs:
-            x = conv_seq(x)
-        x = torch.flatten(x, start_dim=1)
-        x = nn.functional.relu(x)
-        x = self.hidden_fc_1(x)
-        x = self.hidden_fc_2(x)
+        self._obs_embed = self.embedding(input_dict["obs"])
+        # x = self._obs_embed
+        x = self.hidden_fc_2(self._obs_embed)
         x = nn.functional.relu(x)
         logits = self.logits_fc(x)
         value = self.value_fc(x)
@@ -108,24 +103,34 @@ class MohithImpalaCNN(TorchModelV2, nn.Module):
         x = torch.flatten(x, start_dim=1)
         x = nn.functional.relu(x)
         x = self.hidden_fc_1(x)
-        return x
+        return nn.functional.relu(x)
+        # return x
 
     def intrinsic_reward(self, input_dict):
         with torch.no_grad():
-            obs = self.embedding(input_dict["obs"].float())
-            next_obs_t = self.embedding(input_dict["new_obs"].float())
+            mask = [not i for i in input_dict["dones"]]
+            obs = self.embedding(input_dict["obs"])
+            next_obs_t = obs[1:][mask[:-1]]
+            if mask[-1]:
+                next_obs_t = torch.cat(next_obs_t, self.embedding(input_dict["new_obs"][-1]))
+            obs = obs[mask]
             act_one_hot = nn.functional.one_hot(input_dict["actions"].long(),
                                                 num_classes=self.action_space.n)
+            in_rew = torch.zeros(len(mask), dtype=torch.float32, device=obs.device)
+
             x = torch.cat((obs, act_one_hot.float()), dim=1)
             x = self.fdm_hidden(x)
             x = nn.functional.relu(x)
             next_obs = self.fdm_output(x)
-            return torch.mean(torch.pow((next_obs_t - next_obs), 2), dim=1).cpu().numpy()
+            in_rew[mask] = torch.mean(torch.pow((next_obs_t - next_obs), 2), dim=1)
+            return in_rew.cpu().numpy()
 
     def icm_losses(self, input_dict):
+        assert self._obs_embed is not None, "must call forward() first"
         mask = [not i for i in input_dict["dones"]]
-        obs = self.embedding(input_dict["obs"][mask].float())
-        next_obs_t = self.embedding(input_dict["new_obs"][mask].float())
+        obs = self.obs_embed[mask]
+        with torch.no_grad():
+            next_obs_t = self.embedding(input_dict["new_obs"][mask].float())
         act = input_dict["actions"][mask].long()
         act_one_hot = nn.functional.one_hot(act, num_classes=self.action_space.n).float()
         fdm_loss = torch.zeros(len(mask), dtype=torch.float32, device=obs.device)
@@ -147,6 +152,4 @@ class MohithImpalaCNN(TorchModelV2, nn.Module):
         return fdm_loss, idm_loss
 
 
-
-
-ModelCatalog.register_custom_model("mohith_impala_cnn_torch", MohithImpalaCNN)
+ModelCatalog.register_custom_model("icm_impala_cnn_torch", ICMImpalaCNN)
