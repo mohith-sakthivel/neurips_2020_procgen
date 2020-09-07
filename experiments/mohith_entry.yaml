@@ -125,11 +125,11 @@ procgen-ppo:
         # Use PyTorch (instead of tf). If using `rllib train`, this can also be
         # enabled with the `--torch` flag.
         # NOTE: Some agents may not support `torch` yet and throw an error.
-        use_pytorch: True
+        framework: torch
 
         ### ICM Settings
         # Use intrinsic reward
-        use_intrinsic_rew: True
+        use_intrinsic_rew: False
         # No reward
         no_reward: False
         # Coefficent for inverse dynamics
