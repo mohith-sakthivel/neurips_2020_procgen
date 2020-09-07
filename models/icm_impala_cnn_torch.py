@@ -129,8 +129,11 @@ class ICMImpalaCNN(TorchModelV2, nn.Module):
         assert self._obs_embed is not None, "must call forward() first"
         mask = [not i for i in input_dict["dones"]]
         obs = self._obs_embed[mask]
-        with torch.no_grad():
-            next_obs_t = self.embedding(input_dict["new_obs"][mask].float())
+        next_obs_t = self._obs_embed[1:][mask[:-1]]
+        if mask[-1]:
+            next_obs_t = torch.cat((next_obs_t, self.embedding(input_dict["new_obs"][-1:])), dim=0)
+        # with torch.no_grad():
+        #     next_obs_t = self.embedding(input_dict["new_obs"][mask].float())
         act = input_dict["actions"][mask].long()
         act_one_hot = nn.functional.one_hot(act, num_classes=self.action_space.n).float()
         fdm_loss = torch.zeros(len(mask), dtype=torch.float32, device=obs.device)
