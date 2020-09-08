@@ -69,7 +69,7 @@ class ICMImpalaCNN(TorchModelV2, nn.Module):
             conv_seqs.append(conv_seq)
         self.conv_seqs = nn.ModuleList(conv_seqs)
         self.hidden_fc_1 = nn.Linear(in_features=shape[0] * shape[1] * shape[2], out_features=embed_size)
-        self.hidden_fc_2 = nn.Linear(in_features=256, out_features=256)
+        # self.hidden_fc_2 = nn.Linear(in_features=256, out_features=256)
         self.logits_fc = nn.Linear(in_features=256, out_features=num_outputs)
         self.value_fc = nn.Linear(in_features=256, out_features=1)
         # ICM Layers
@@ -81,9 +81,9 @@ class ICMImpalaCNN(TorchModelV2, nn.Module):
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
         self._obs_embed = self.embedding(input_dict["obs"])
-        # x = self._obs_embed
-        x = self.hidden_fc_2(self._obs_embed)
-        x = nn.functional.relu(x)
+        x = self._obs_embed
+        # x = self.hidden_fc_2(self._obs_embed)
+        # x = nn.functional.relu(x)
         logits = self.logits_fc(x)
         value = self.value_fc(x)
         self._value = value.squeeze(1)
@@ -125,13 +125,14 @@ class ICMImpalaCNN(TorchModelV2, nn.Module):
             in_rew[mask] = torch.mean(torch.pow((next_obs_t - next_obs), 2), dim=1)
             return in_rew.cpu().numpy()
 
-    def icm_losses(self, input_dict):
+    def get_aux_loss(self, input_dict):
         assert self._obs_embed is not None, "must call forward() first"
         mask = [not i for i in input_dict["dones"]]
         obs = self._obs_embed[mask]
-        next_obs_t = self._obs_embed[1:][mask[:-1]]
-        if mask[-1]:
-            next_obs_t = torch.cat((next_obs_t, self.embedding(input_dict["new_obs"][-1:])), dim=0)
+        with torch.no_grad():
+            next_obs_t = self._obs_embed[1:][mask[:-1]]
+            if mask[-1]:
+                next_obs_t = torch.cat((next_obs_t, self.embedding(input_dict["new_obs"][-1:])), dim=0)
         # with torch.no_grad():
         #     next_obs_t = self.embedding(input_dict["new_obs"][mask].float())
         act = input_dict["actions"][mask].long()
@@ -152,7 +153,7 @@ class ICMImpalaCNN(TorchModelV2, nn.Module):
         log_probs = nn.functional.log_softmax(idm_x, dim=1)
         idm_loss[mask] = nn.functional.nll_loss(log_probs, act, reduction='none')
 
-        return fdm_loss, idm_loss
+        return fdm_loss+idm_loss
 
 
 ModelCatalog.register_custom_model("icm_impala_cnn_torch", ICMImpalaCNN)

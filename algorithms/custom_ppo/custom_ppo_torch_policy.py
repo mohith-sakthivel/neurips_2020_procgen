@@ -8,8 +8,7 @@ import logging
 
 import ray
 from ray.rllib.agents.a3c.a3c_torch_policy import apply_grad_clipping
-from ray.rllib.agents.ppo.ppo_tf_policy import postprocess_ppo_gae, \
-    setup_config
+from ray.rllib.agents.ppo.ppo_tf_policy import setup_config
 from ray.rllib.evaluation.postprocessing import Postprocessing
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.policy.torch_policy import EntropyCoeffSchedule, \
@@ -38,14 +37,12 @@ class PPOLoss:
                  value_fn,
                  cur_kl_coeff,
                  valid_mask,
-                 fdm_loss,
-                 idm_loss,
+                 aux_loss,
                  entropy_coeff=0,
                  clip_param=0.1,
                  vf_clip_param=0.1,
                  vf_loss_coeff=1.0,
-                 idm_loss_coeff=0,
-                 fdm_loss_coeff=0,
+                 aux_loss_coeff=0,
                  use_gae=True):
         """Constructs the loss for Proximal Policy Objective.
 
@@ -102,9 +99,8 @@ class PPOLoss:
                                      1 + clip_param))
         self.mean_policy_loss = reduce_mean_valid(-surrogate_loss)
 
-        if idm_loss is not None:
-            self.idm_loss = reduce_mean_valid(idm_loss)
-            self.fdm_loss = reduce_mean_valid(fdm_loss)
+        if aux_loss is not None:
+            self.aux_loss = reduce_mean_valid(aux_loss)
 
         if use_gae:
             vf_loss1 = torch.pow(value_fn - value_targets, 2.0)
@@ -118,9 +114,9 @@ class PPOLoss:
         else:
             self.mean_vf_loss = 0.0
             loss = (-surrogate_loss + cur_kl_coeff * action_kl - entropy_coeff * curr_entropy)
-        if idm_loss is not None:
-            loss += idm_loss_coeff * idm_loss + fdm_loss_coeff * fdm_loss
-        loss = reduce_mean_valid(loss)        
+        if aux_loss is not None:
+            loss += aux_loss_coeff * aux_loss
+        loss = reduce_mean_valid(loss)   
         self.loss = loss
 
         # def calc_mean(t):
@@ -143,17 +139,15 @@ def ppo_surrogate_loss(policy, model, dist_class, train_batch):
         mask = sequence_mask(train_batch["seq_lens"], max_seq_len)
         mask = torch.reshape(mask, [-1])
 
-    if policy.config["use_intrinsic_rew"]:
-        icm_input = {
-                    # "obs": input_dict[SampleBatch.CUR_OBS],
+    if policy.config["use_aux_loss"]:
+        aux_input = {
                     "new_obs": train_batch[SampleBatch.NEXT_OBS],
                     "actions": train_batch[SampleBatch.ACTIONS],
                     "dones": train_batch["dones"]
                     }
-        fdm_loss, idm_loss = policy.model.icm_losses(icm_input)
-        train_batch["fdm_loss"] = fdm_loss
-        train_batch["idm_loss"] = idm_loss
-
+        aux_loss = policy.model.get_aux_loss(aux_input)
+        train_batch["aux_loss"] = aux_loss
+    
     policy.loss_obj = PPOLoss(
         dist_class,
         model,
@@ -167,14 +161,12 @@ def ppo_surrogate_loss(policy, model, dist_class, train_batch):
         model.value_function(),
         policy.kl_coeff,
         mask,
-        train_batch.get("fdm_loss", None),
-        train_batch.get("idm_loss", None),
+        train_batch.get("aux_loss", None),
         entropy_coeff=policy.entropy_coeff,
         clip_param=policy.config["clip_param"],
         vf_clip_param=policy.config["vf_clip_param"],
         vf_loss_coeff=policy.config["vf_loss_coeff"],
-        idm_loss_coeff=policy.config["idm_loss_coeff"],
-        fdm_loss_coeff=policy.config["fdm_loss_coeff"],
+        aux_loss_coeff=policy.config["aux_loss_coeff"],
         use_gae=policy.config["use_gae"],
     )
 
@@ -196,14 +188,13 @@ def kl_and_loss_stats(policy, train_batch):
         "entropy": policy.loss_obj.mean_entropy,
         "entropy_coeff": policy.entropy_coeff,
     }
-    if policy.config["use_intrinsic_rew"]:
-        if not policy.config["no_reward"]:
-            stats["max_intrinsic_rew"] = max(train_batch[PostProcessing.INTRINSIC_REWARDS])
-            stats["max_extrinsic_rew"] = max(train_batch[SampleBatch.REWARDS])
-            stats["mean_intrinsic_rew"] = torch.mean(train_batch[PostProcessing.INTRINSIC_REWARDS]).cpu().item()
-            stats["mean_extrinsic_rew"] = torch.mean(train_batch[SampleBatch.REWARDS]).cpu().item()
-        stats["idm_loss"] = policy.loss_obj.idm_loss
-        stats["fdm_loss"] = policy.loss_obj.fdm_loss
+    if policy.config["use_aux_loss"]:
+        stats["aux_loss"] = policy.loss_obj.aux_loss
+    if policy.config["use_in_rew"]:
+        stats["max_intrinsic_rew"] = max(train_batch[PostProcessing.INTRINSIC_REWARDS])
+        stats["max_extrinsic_rew"] = max(train_batch[SampleBatch.REWARDS])
+        stats["mean_intrinsic_rew"] = torch.mean(train_batch[PostProcessing.INTRINSIC_REWARDS]).cpu().item()
+        stats["mean_extrinsic_rew"] = torch.mean(train_batch[SampleBatch.REWARDS]).cpu().item()
     return stats
 
 
@@ -218,7 +209,6 @@ def vf_preds_fetches(policy, input_dict, state_batches, model, action_dist):
     """Adds value function outputs to experience train_batches."""
     extra_dict = { SampleBatch.VF_PREDS: policy.model.value_function()}
     return extra_dict
-                
 
 
 class KLCoeffMixin:
@@ -286,8 +276,7 @@ def postprocess_ppo_gae(policy,
                                *next_state)
 
     in_rews = np.zeros(len(sample_batch["dones"]))
-    if (policy.config["use_intrinsic_rew"] and not policy.config["no_reward"]
-        and not all(sample_batch["dones"])):
+    if (policy.config["use_in_rew"] and not all(sample_batch["dones"])):
         in_rews_batch = {
                         SampleBatch.CUR_OBS: sample_batch[SampleBatch.CUR_OBS],
                         SampleBatch.NEXT_OBS: sample_batch[SampleBatch.NEXT_OBS][-1:],
