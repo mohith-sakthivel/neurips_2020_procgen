@@ -28,5 +28,5 @@ def _import_custom_ppo_agent():
 CUSTOM_ALGORITHMS = {
     # "custom/CustomRandomAgent": _import_custom_random_agent,
     # "RandomPolicy": _import_random_policy,
-    "CustomPPOAgent": _import_custom_ppo_agent
+    "CustomPPO": _import_custom_ppo_agent
 }

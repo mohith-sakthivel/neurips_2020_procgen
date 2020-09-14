@@ -6,6 +6,8 @@ __pycache__/
 # Personal
 .vscode/
 experiments/local_test.yaml
+tests/
+.env/
 
 # C extensions
 *.so

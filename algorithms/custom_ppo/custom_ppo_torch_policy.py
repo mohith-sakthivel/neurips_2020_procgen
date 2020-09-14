@@ -1,14 +1,10 @@
-import algorithms
-from os import stat
-# from algorithms.custom_ppo.custom_ppo import DEFAULT_CONFIG
-import numpy as np
-from ray.rllib.evaluation.postprocessing import discount
+from algorithms.custom_ppo.custom_ppo import DEFAULT_CONFIG
 
 import logging
 
-import ray
 from ray.rllib.agents.a3c.a3c_torch_policy import apply_grad_clipping
-from ray.rllib.agents.ppo.ppo_tf_policy import setup_config
+from algorithms.custom_ppo.custom_ppo_tf_policy import postprocess_ppo_gae, \
+    setup_config
 from ray.rllib.evaluation.postprocessing import Postprocessing
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.policy.torch_policy import EntropyCoeffSchedule, \
@@ -38,11 +34,11 @@ class PPOLoss:
                  cur_kl_coeff,
                  valid_mask,
                  aux_loss,
+                 aux_loss_coeff=0,
                  entropy_coeff=0,
                  clip_param=0.1,
                  vf_clip_param=0.1,
                  vf_loss_coeff=1.0,
-                 aux_loss_coeff=0,
                  use_gae=True):
         """Constructs the loss for Proximal Policy Objective.
 
@@ -85,6 +81,8 @@ class PPOLoss:
 
         prev_dist = dist_class(prev_logits, model)
         # Make loss functions.
+        adv_std, adv_mean = torch.std_mean(advantages)
+        advantages = (advantages - adv_mean) / (adv_std + 1e-8)
         logp_ratio = torch.exp(
             curr_action_dist.logp(actions) - prev_actions_logp)
         action_kl = prev_dist.kl(curr_action_dist)
@@ -118,15 +116,6 @@ class PPOLoss:
             loss += aux_loss_coeff * aux_loss
         loss = reduce_mean_valid(loss)   
         self.loss = loss
-
-        # def calc_mean(t):
-        #         return torch.mean(t).item()
-        # losses = [surrogate_loss, action_kl, vf_loss, curr_entropy, idm_loss, fdm_loss]
-        # losses = [*map(calc_mean, losses)]
-        # coeff = [-1, cur_kl_coeff, vf_loss_coeff, -entropy_coeff, idm_loss_coeff, fdm_loss_coeff]
-        # l = [round(lo*cf, 4) for lo, cf in zip(losses, coeff)]
-        # print(len(losses), len(coeff))
-        # print("Policy Loss: {}\t Action_KL: {}\t Value Function: {}\t Entorpy: {}\t IDM: {} FDM: {}".format(*l))
 
 
 def ppo_surrogate_loss(policy, model, dist_class, train_batch):
@@ -190,19 +179,7 @@ def kl_and_loss_stats(policy, train_batch):
     }
     if policy.config["use_aux_loss"]:
         stats["aux_loss"] = policy.loss_obj.aux_loss
-    if policy.config["use_in_rew"]:
-        stats["max_intrinsic_rew"] = max(train_batch[PostProcessing.INTRINSIC_REWARDS])
-        stats["max_extrinsic_rew"] = max(train_batch[SampleBatch.REWARDS])
-        stats["mean_intrinsic_rew"] = torch.mean(train_batch[PostProcessing.INTRINSIC_REWARDS]).cpu().item()
-        stats["mean_extrinsic_rew"] = torch.mean(train_batch[SampleBatch.REWARDS]).cpu().item()
     return stats
-
-
-class PostProcessing:
-    """ Constant definitions for postprocessing with intrinsic rewards. """
-    ADVANTAGES = "advantages"
-    VALUE_TARGETS = "value_targets"
-    INTRINSIC_REWARDS = "intrinsic_rewards"
 
 
 def vf_preds_fetches(policy, input_dict, state_batches, model, action_dist):
@@ -257,123 +234,18 @@ def setup_mixins(policy, obs_space, action_space, config):
     LearningRateSchedule.__init__(policy, config["lr"], config["lr_schedule"])
 
 
-def postprocess_ppo_gae(policy,
-                        sample_batch,
-                        other_agent_batches=None,
-                        episode=None):
-    """Adds the policy logits, VF preds, and advantages to the trajectory."""
-
-    completed = sample_batch["dones"][-1]
-    if completed:
-        last_r = 0.0
-    else:
-        next_state = []
-        for i in range(policy.num_state_tensors()):
-            next_state.append([sample_batch["state_out_{}".format(i)][-1]])
-        last_r = policy._value(sample_batch[SampleBatch.NEXT_OBS][-1],
-                               sample_batch[SampleBatch.ACTIONS][-1],
-                               sample_batch[SampleBatch.REWARDS][-1],
-                               *next_state)
-
-    in_rews = np.zeros(len(sample_batch["dones"]))
-    if (policy.config["use_in_rew"] and not all(sample_batch["dones"])):
-        in_rews_batch = {
-                        SampleBatch.CUR_OBS: sample_batch[SampleBatch.CUR_OBS],
-                        SampleBatch.NEXT_OBS: sample_batch[SampleBatch.NEXT_OBS][-1:],
-                        SampleBatch.ACTIONS: sample_batch[SampleBatch.ACTIONS],
-                        }
-        in_rews_batch = policy._lazy_tensor_dict(in_rews_batch)
-        in_rews_batch["dones"] = sample_batch["dones"]
-        in_rews = policy.model.intrinsic_reward(in_rews_batch)
-    sample_batch[PostProcessing.INTRINSIC_REWARDS] = in_rews
-
-    batch = compute_advantages(
-        sample_batch,
-        last_r,
-        policy.config["gamma"],
-        policy.config["lambda"],
-        policy.config["in_rew_coeff"],
-        use_gae=policy.config["use_gae"])
-    return batch
-
-
-def compute_advantages(rollout,
-                       last_r,
-                       gamma=0.9,
-                       lambda_=1.0,
-                       in_rew_coeff=0.01,
-                       use_gae=True,
-                       use_critic=True):
-    """
-    Given a rollout, compute its value targets and the advantage.
-
-    Args:
-        rollout (SampleBatch): SampleBatch of a single trajectory
-        last_r (float): Value estimation for last observation
-        gamma (float): Discount factor.
-        lambda_ (float): Parameter for GAE
-        use_gae (bool): Using Generalized Advantage Estimation
-        use_critic (bool): Whether to use critic (value estimates). Setting
-                           this to False will use 0 as baseline.
-
-    Returns:
-        SampleBatch (SampleBatch): Object with experience from rollout and
-            processed rewards.
-    """
-
-    traj = {}
-    trajsize = len(rollout[SampleBatch.ACTIONS])
-    for key in rollout:
-        traj[key] = np.stack(rollout[key])
-
-    assert SampleBatch.VF_PREDS in rollout or not use_critic, \
-        "use_critic=True but values not found"
-    assert use_critic or not use_gae, \
-        "Can't use gae without using a value function"
-    if use_gae:
-        vpred_t = np.concatenate(
-            [rollout[SampleBatch.VF_PREDS],
-             np.array([last_r])])
-        delta_t = (
-                   traj[SampleBatch.REWARDS] +
-                   in_rew_coeff * traj[PostProcessing.INTRINSIC_REWARDS] +
-                   gamma * vpred_t[1:] - vpred_t[:-1])
-        # This formula for the advantage comes from:
-        # "Generalized Advantage Estimation": https://arxiv.org/abs/1506.02438
-        traj[Postprocessing.ADVANTAGES] = discount(delta_t, gamma * lambda_)
-        traj[Postprocessing.VALUE_TARGETS] = (
-            traj[Postprocessing.ADVANTAGES] +
-            traj[SampleBatch.VF_PREDS]).copy().astype(np.float32)
-    else:
-        rewards_plus_v = np.concatenate(
-            [rollout[SampleBatch.REWARDS] + in_rew_coeff * traj[PostProcessing.INTRINSIC_REWARDS],
-             np.array([last_r])])
-        discounted_returns = discount(rewards_plus_v,
-                                      gamma)[:-1].copy().astype(np.float32)
-
-        if use_critic:
-            traj[Postprocessing.
-                 ADVANTAGES] = discounted_returns - rollout[SampleBatch.
-                                                            VF_PREDS]
-            traj[Postprocessing.VALUE_TARGETS] = discounted_returns
-        else:
-            traj[Postprocessing.ADVANTAGES] = discounted_returns
-            traj[Postprocessing.VALUE_TARGETS] = np.zeros_like(
-                traj[Postprocessing.ADVANTAGES])
-
-    traj[Postprocessing.ADVANTAGES] = traj[
-        Postprocessing.ADVANTAGES].copy().astype(np.float32)
-
-    assert all(val.shape[0] == trajsize for val in traj.values()), \
-        "Rollout stacked incorrectly!"
-    return SampleBatch(traj)
+def optimizer(policy, config):
+    """Custom PyTorch optimizer to use."""
+    return torch.optim.Adam(policy.model.parameters(),
+                            lr=config["lr"], eps=1e-5)
 
 
 CustomPPOTorchPolicy = build_torch_policy(
     name="CustomPPOTorchPolicy",
-    get_default_config=lambda: algorithms.custom_ppo.DEFAULT_CONFIG,
+    get_default_config=lambda: DEFAULT_CONFIG,
     loss_fn=ppo_surrogate_loss,
     stats_fn=kl_and_loss_stats,
+    optimizer_fn=optimizer,
     extra_action_out_fn=vf_preds_fetches,
     postprocess_fn=postprocess_ppo_gae,
     extra_grad_process_fn=apply_grad_clipping,

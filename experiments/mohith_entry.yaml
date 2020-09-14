@@ -1,7 +1,7 @@
 procgen-ppo:
     env: procgen_env_wrapper  # Change this at your own risk :D
-    run: CustomPPOAgent
-    disable_evaluation_worker: False
+    run: CustomPPO
+    # disable_evaluation_worker: False
     # Can be replaced by any of the available agents as described at : 
     # https://github.com/ray-project/ray/blob/master/rllib/agents/registry.py#L103
     # 
@@ -130,13 +130,9 @@ procgen-ppo:
 
         ### Custom Settings
         # Use intrinsic reward
-        use_aux_loss: True
-        # No reward
-        use_in_rew: True
+        use_aux_loss: False
         # Coefficent for auxiliary loss
-        aux_loss_coeff: 1
-        # Coeff for intrinsic reward
-        in_rew_coeff: 0.01
+        aux_loss_coeff: 0.1
 
         ################################################
         ################################################
@@ -263,7 +259,7 @@ procgen-ppo:
         # algorithms can take advantage of trainer GPUs. This can be fractional
         # (e.g., 0.3 GPUs).
         # Note : If GPUs are not available, this will be overriden by the AIcrowd evaluators to 0.
-        num_gpus: 0.6
+        num_gpus: 0.65
 
         ################################################
         ################################################

@@ -57,7 +57,6 @@ class ICMImpalaCNN(TorchModelV2, nn.Module):
                               model_config, name)
         nn.Module.__init__(self)
 
-        # c, h, w = obs_space.shape     # Frame stack
         h, w, c = obs_space.shape
         shape = (c, h, w)
         embed_size = 256
@@ -68,15 +67,13 @@ class ICMImpalaCNN(TorchModelV2, nn.Module):
             shape = conv_seq.get_output_shape()
             conv_seqs.append(conv_seq)
         self.conv_seqs = nn.ModuleList(conv_seqs)
-        self.hidden_fc_1 = nn.Linear(in_features=shape[0] * shape[1] * shape[2], out_features=embed_size)
-        # self.hidden_fc_2 = nn.Linear(in_features=256, out_features=256)
+        self.hidden_fc = nn.Linear(in_features=shape[0] * shape[1] * shape[2], out_features=embed_size)
         self.logits_fc = nn.Linear(in_features=256, out_features=num_outputs)
         self.value_fc = nn.Linear(in_features=256, out_features=1)
-        # ICM Layers
-        self.idm_hidden = nn.Linear(in_features=embed_size * 2, out_features=256)
-        self.idm_logits = nn.Linear(in_features=256, out_features=num_outputs)
-        self.fdm_hidden = nn.Linear(in_features=embed_size + num_outputs, out_features=256)
-        self.fdm_output = nn.Linear(in_features=256, out_features=embed_size)
+        # state-transition model
+        self.trans_model = nn.Conv2d(in_channels=32, out_channels=32*num_outputs, kernel_size=3, padding=1)
+        
+ 
         
     @override(TorchModelV2)
     def forward(self, input_dict, state, seq_lens):
