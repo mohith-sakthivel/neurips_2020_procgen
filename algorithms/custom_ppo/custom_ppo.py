@@ -87,6 +87,6 @@ CustomPPOTrainer = PPOTrainer.with_updates(
     name="CustomPPO",
     default_config=DEFAULT_CONFIG,
     default_policy=PPOTFPolicy,
-    get_policy_class=get_policy_class,  
+    get_policy_class=get_policy_class,
 )
 

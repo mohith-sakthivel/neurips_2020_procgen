@@ -170,7 +170,7 @@ def postprocess_ppo_gae(policy,
                         other_agent_batches=None,
                         episode=None):
     """Adds the policy logits, VF preds, and advantages to the trajectory."""
-
+    
     completed = sample_batch["dones"][-1]
     if completed:
         last_r = 0.0
@@ -256,17 +256,17 @@ def setup_config(policy, obs_space, action_space, config):
     config["model"]["vf_share_layers"] = config["vf_share_layers"]
 
 
-def optimizer(policy, config):
-        """TF optimizer to use for policy optimization."""
-        return tf.train.AdamOptimizer(config["lr"], epsilon=1e-5)
-
-
 def setup_mixins(policy, obs_space, action_space, config):
     ValueNetworkMixin.__init__(policy, obs_space, action_space, config)
     KLCoeffMixin.__init__(policy, config)
     EntropyCoeffSchedule.__init__(policy, config["entropy_coeff"],
                                   config["entropy_coeff_schedule"])
     LearningRateSchedule.__init__(policy, config["lr"], config["lr_schedule"])
+
+
+def optimizer(policy, config):
+        """TF optimizer to use for policy optimization."""
+        return tf.train.AdamOptimizer(config["lr"], epsilon=1e-5)
 
 
 PPOTFPolicy = build_tf_policy(
