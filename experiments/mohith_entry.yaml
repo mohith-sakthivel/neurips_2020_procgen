@@ -286,7 +286,7 @@ procgen-ppo:
         ################################################
         ################################################
         # Element-wise observation filter, either "NoFilter" or "MeanStdFilter".
-        observation_filter: "MeanStdFilter"
+        observation_filter: "NoFilter"
         # Whether to synchronize the statistics of remote filters.
         synchronize_filters: True
         # Whether to LZ4 compress individual observations
@@ -298,4 +298,9 @@ procgen-ppo:
         # each worker, so that identically configured trials will have identical
         # results. This makes experiments reproducible.
         seed: null
+
+        # Configuration for evaluation workers
+        evaluation_config:
+        # Switching off exploration behavior for evaluation workers
+            explore: False
         
