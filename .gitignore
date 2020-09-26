@@ -7,6 +7,7 @@ __pycache__/
 .vscode/
 experiments/local_test.yaml
 tests/
+archived/
 .env/
 
 # C extensions

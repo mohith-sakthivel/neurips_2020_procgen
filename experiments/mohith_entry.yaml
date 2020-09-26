@@ -1,5 +1,5 @@
 procgen-ppo:
-    env: procgen_env_wrapper  # Change this at your own risk :D
+    env: stacked_procgen_env  # Change this at your own risk :D
     run: CustomPPO
     # disable_evaluation_worker: False
     # Can be replaced by any of the available agents as described at : 
@@ -299,8 +299,4 @@ procgen-ppo:
         # results. This makes experiments reproducible.
         seed: null
 
-        # Configuration for evaluation workers
-        evaluation_config:
-        # Switching off exploration behavior for evaluation workers
-            explore: False
         
