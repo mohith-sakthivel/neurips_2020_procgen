@@ -2,34 +2,12 @@ from ray.rllib.models.tf.tf_modelv2 import TFModelV2
 from ray.rllib.utils.framework import try_import_tf
 from ray.rllib.models import ModelCatalog
 
+from models.impala_cnn_tf import conv_layer, residual_block, conv_sequence
+
 tf = try_import_tf()
 
 
-def conv_layer(depth, name):
-    return tf.keras.layers.Conv2D(
-        filters=depth, kernel_size=3, strides=1, padding="same", name=name
-    )
-
-
-def residual_block(x, depth, prefix):
-    inputs = x
-    assert inputs.get_shape()[-1].value == depth
-    x = tf.keras.layers.ReLU()(x)
-    x = conv_layer(depth, name=prefix + "_conv0")(x)
-    x = tf.keras.layers.ReLU()(x)
-    x = conv_layer(depth, name=prefix + "_conv1")(x)
-    return x + inputs
-
-
-def conv_sequence(x, depth, prefix):
-    x = conv_layer(depth, prefix + "_conv")(x)
-    x = tf.keras.layers.MaxPool2D(pool_size=3, strides=2, padding="same")(x)
-    x = residual_block(x, depth, prefix=prefix + "_block0")
-    x = residual_block(x, depth, prefix=prefix + "_block1")
-    return x
-
-
-class MohithImpalaCNN(TFModelV2):
+class DeepMDP_Impala(TFModelV2):
     """
     Network from IMPALA paper implemented in ModelV2 API.
 
@@ -68,4 +46,4 @@ class MohithImpalaCNN(TFModelV2):
 
 
 # Register model in ModelCatalog
-ModelCatalog.register_custom_model("mohith_impala_cnn_tf", MohithImpalaCNN)
+ModelCatalog.register_custom_model("deepmdp_impala_tf", DeepMDP_Impala)

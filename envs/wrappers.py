@@ -49,7 +49,7 @@ class CustomFrameStack(Wrapper):
 
     def _get_observation(self):
         assert len(self.frames) == self.num_stack, (len(self.frames), self.num_stack)
-        return LazyFrames(np.concatenate((self.frames), axis=-1), self.lz4_compress)
+        return LazyFrames(np.concatenate(self.frames, axis=-1), self.lz4_compress)
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)

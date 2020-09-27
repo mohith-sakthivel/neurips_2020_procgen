@@ -132,9 +132,10 @@ def ppo_surrogate_loss(policy, model, dist_class, train_batch):
         aux_input = {
                     "new_obs": train_batch[SampleBatch.NEXT_OBS],
                     "actions": train_batch[SampleBatch.ACTIONS],
-                    "dones": train_batch["dones"]
+                    "dones": train_batch["dones"],
+                    "rewards": train_batch["rewards"]
                     }
-        aux_loss = policy.model.get_aux_loss(aux_input)
+        aux_loss = policy.model.aux_loss(aux_input)
         train_batch["aux_loss"] = aux_loss
     
     policy.loss_obj = PPOLoss(
