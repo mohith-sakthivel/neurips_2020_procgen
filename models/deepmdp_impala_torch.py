@@ -32,13 +32,15 @@ class DeepMDP_Impala(TorchModelV2, nn.Module):
             conv_seqs.append(conv_seq)
         self.conv_seqs = nn.ModuleList(conv_seqs)
         self._embed_shape = (shape[0], shape[1], shape[2])
+        self._n_embed_shape = (self._embed_shape[0] * num_outputs, ) + self._embed_shape[1:]
         self.hidden_fc = nn.Linear(in_features=shape[0] * shape[1] * shape[2], out_features=256)
         self.logits_fc = nn.Linear(in_features=256, out_features=num_outputs)
         self.value_fc = nn.Linear(in_features=256, out_features=1)
 
         self.rew_hid = nn.Linear(in_features=shape[0] * shape[1] * shape[2], out_features=256)
         self.rew_out = nn.Linear(in_features=256, out_features=num_outputs)
-        self.trans_conv = nn.Conv2d(in_channels=shape[0], out_channels=shape[0]*num_outputs, kernel_size=3, padding=1, stride=1)
+        self.trans_conv = nn.Conv2d(in_channels=shape[0]*num_outputs, out_channels=shape[0]*num_outputs,
+                                    kernel_size=3, padding=1, stride=1, groups=num_outputs)
         
     def get_embedding(self, x):
         x = x / 255.0  # scale to 0-1
@@ -67,10 +69,15 @@ class DeepMDP_Impala(TorchModelV2, nn.Module):
 
     def aux_loss(self, input_dict):
         action = input_dict["actions"]
+        self._embed = nn.functional.relu(self._embed)
         sample_no = torch.arange(len(action))
-        next_state = nn.functional.relu(self.trans_conv(self._embed))
+        action_one_hot = nn.functional.one_hot(action, num_classes=self.action_space.n).float()
+        x = action_one_hot.view(-1, self.num_outputs, 1, 1, 1) * self._embed.unsqueeze(1)
+        x = x.view((-1,) + self._n_embed_shape)
+        
+        next_state = nn.functional.relu(self.trans_conv(x))
         next_state = next_state.view((-1, self.num_outputs,) + self._embed_shape)
-        next_state_target = self.get_embedding(input_dict["new_obs"].float())
+        next_state_target = nn.functional.relu(self.get_embedding(input_dict["new_obs"].float()))
         trans_model_error = nn.functional.mse_loss(next_state[sample_no, action],
                                                    next_state_target,
                                                    reduction='none')

@@ -42,7 +42,7 @@ DEFAULT_CONFIG = with_common_config({
     "vf_loss_coeff": 1.0,
     # Coefficient of the entropy regularizer.
     "entropy_coeff": 0.0,
-    # Use intrinsic reward
+    # Calculate auxiliary loss
     "use_aux_loss": True,
     # Coefficent for auxiliary loss
     "aux_loss_coeff": 1,
